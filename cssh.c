@@ -16,10 +16,7 @@
 
 char **get_next_command(size_t *num_args)
 {
-    // print the prompt
     printf("cssh$ ");
-
-    // get the next line of input
     char *line = NULL;
     size_t len = 0;
     getline(&line, &len, stdin);
@@ -30,10 +27,11 @@ char **get_next_command(size_t *num_args)
     }
     if (feof(stdin))
     {
+	free(line);
         return NULL;
     }
 
-    // turn the line into an array of words
+   
     char **words = (char **)malloc(MAX_ARGS*sizeof(char *));
     int i=0;
 
@@ -41,7 +39,7 @@ char **get_next_command(size_t *num_args)
     while (parse != NULL)
     {
         char *word = strsep(&parse, " \t\r\f\n");
-        if (strlen(word) != 0)
+        if (strlen(word) > 0)
         {
             words[i++] = strdup(word);
         }
@@ -52,7 +50,6 @@ char **get_next_command(size_t *num_args)
         words[i] = NULL;
     }
 
-    // all the words are in the array now, so free the original line
     free(line);
 
     return words;
@@ -60,40 +57,85 @@ char **get_next_command(size_t *num_args)
 
 void free_command(char **words)
 {
-    for (int i=0; i<MAX_ARGS; ++i)
+    for (int i=0; words[i] != NULL; ++i)
     {
-        if (words[i] == NULL)
-        {
-            break;
-        }
         free(words[i]);
     }
     free(words);
 }
 
+void execute_command(char **args, size_t num_args)
+{
+	if(num_args == 0) return;
+
+	if (strcmp(args[0], "exit") == 0)
+	{
+		exit(0);
+	}
+
+	pid_t pid = fork();
+	if (pid== -1)
+	{
+		perror("fork");
+		return;
+	}
+	if (pid== 0)
+	{
+		for (int i= 0; i < num_args; i++)
+		{
+			if (strcmp(args[i], "<")== 0)
+			{
+				int fd = open(args[i+1], O_RDONLY);
+				if (fd== -1)
+				{
+					perror("open");
+					exit(1);
+				}
+				dup2(fd, STDIN_FILENO);
+				close(fd);
+				args[i] = NULL;
+				break;
+			}
+			else if (strcmp (args[i], ">") == 0 || strcmp(args[i], ">>")== 0)
+{
+				int flags= O_WRONLY | O_CREAT | (strcmp(args[i], ">>")== 0 ? O_APPEND : O_TRUNC);
+				int fd = open(args[i+1], flags, 0644);
+				if (fd ==-1)
+				{
+					perror("open");
+					exit(1);
+				}
+				dup2(fd, STDOUT_FILENO);
+				close(fd);
+				args[i]= NULL;
+				break;
+			}
+		}
+		execvp(args[0], args);
+		perror("execvp");
+		exit(1);
+	}
+	else
+	{
+		waitpid(pid, NULL, 0);
+	}
+}
+
+
 int main()
 {
     size_t num_args;
 
-    // get the next command
     char **command_line_words = get_next_command(&num_args);
     while (command_line_words != NULL)
     {
-        // run the command here
-        // don't forget to skip blank commands
-        // and add something to stop the loop if the user 
-        // runs "exit"
-        
-
-        // free the memory for this command
+        execute_command(command_line_words, num_args);
         free_command(command_line_words);
-
-        // get the next command
         command_line_words = get_next_command(&num_args);
     }
-
-    // free the memory for the last command
+    if (command_line_words !=NULL)
+    {
     free_command(command_line_words);
-
+    }
     return 0;
 }
